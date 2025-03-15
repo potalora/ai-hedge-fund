@@ -12,7 +12,7 @@ from typing import List, Optional, Dict, Any
 import yfinance as yf
 import pandas as pd
 
-from src.data.models import Price, FinancialMetrics, LineItem
+from src.data.models import Price, FinancialMetrics, InsiderTrade
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -23,6 +23,7 @@ _cache: Dict[str, Dict[str, Any]] = {
     "financial_metrics": {},
     "line_items": {},
     "market_cap": {},
+    "insider_trades": {},
 }
 
 
@@ -169,10 +170,92 @@ def yf_get_financial_metrics(
         return []
 
 
+def yf_get_insider_trades(
+    ticker: str,
+    end_date: str,
+    start_date: Optional[str] = None,
+    limit: int = 1000
+) -> List[InsiderTrade]:
+    """
+    Get insider trading data from Yahoo Finance.
+    
+    Args:
+        ticker: Stock ticker symbol
+        end_date: End date for insider trades (used for filtering)
+        start_date: Start date for insider trades (used for filtering)
+        limit: Maximum number of trades to return
+        
+    Returns:
+        List of InsiderTrade objects
+    """
+    cache_key = f"{ticker}_{end_date}_{start_date}_{limit}"
+    if cache_key in _cache["insider_trades"]:
+        logger.info(f"Using cached insider trades for {ticker}")
+        return _cache["insider_trades"][cache_key]
+    
+    try:
+        logger.info(f"Fetching insider trades for {ticker}")
+        ticker_data = yf.Ticker(ticker)
+        
+        # Get insider transactions
+        transactions_df = ticker_data.insider_transactions
+        
+        if transactions_df is None or transactions_df.empty:
+            logger.warning(f"No insider trades found for {ticker}")
+            return []
+        
+        # Convert transactions to InsiderTrade objects
+        insider_trades = []
+        for _, row in transactions_df.iterrows():
+            # Convert startDate to datetime for filtering
+            filing_date = row.get('startDate', '')
+            filing_date_str = filing_date.strftime('%Y-%m-%d') if isinstance(filing_date, pd.Timestamp) else ''
+            
+            # Apply date filtering if start_date or end_date are provided
+            if start_date and filing_date_str and filing_date_str < start_date:
+                continue
+            if end_date and filing_date_str and filing_date_str > end_date:
+                continue
+            
+            # Get transaction date
+            transaction_date = row.get('transactionDate', '')
+            transaction_date_str = transaction_date.strftime('%Y-%m-%d') if isinstance(transaction_date, pd.Timestamp) else ''
+            
+            # Create InsiderTrade object
+            insider_trade = InsiderTrade(
+                ticker=ticker,
+                issuer=ticker,
+                name=row.get('filerName', ''),
+                title=row.get('filerRelation', ''),
+                is_board_director='director' in str(row.get('filerRelation', '')).lower(),
+                transaction_date=transaction_date_str,
+                transaction_shares=float(row.get('shares', 0)) if pd.notna(row.get('shares')) else 0,
+                transaction_price_per_share=float(row.get('value', 0)) if pd.notna(row.get('value')) else 0,
+                transaction_value=float(row.get('shares', 0) * row.get('value', 0)) if pd.notna(row.get('shares')) and pd.notna(row.get('value')) else 0,
+                shares_owned_before_transaction=None,
+                shares_owned_after_transaction=None,
+                security_title=None,
+                filing_date=filing_date_str
+            )
+            insider_trades.append(insider_trade)
+        
+        # Limit the number of trades returned
+        limited_trades = insider_trades[:limit] if limit else insider_trades
+        
+        # Cache the results
+        _cache["insider_trades"][cache_key] = limited_trades
+        return limited_trades
+        
+    except Exception as e:
+        logger.error(f"Error fetching insider trades for {ticker}: {str(e)}")
+        return []
+
+
 def clear_cache():
     """Clear all cached data."""
     _cache["prices"].clear()
     _cache["financial_metrics"].clear()
     _cache["line_items"].clear()
     _cache["market_cap"].clear()
+    _cache["insider_trades"].clear()
     logger.info("Cleared Yahoo Finance cache")

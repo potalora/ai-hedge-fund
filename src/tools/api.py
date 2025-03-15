@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import requests
+import logging
 
 from src.data.cache import get_cache
 from src.data.models import (
@@ -17,7 +18,7 @@ from src.data.models import (
 )
 
 # Import Yahoo Finance adapter
-from src.tools.yahoo_finance import yf_get_prices, yf_get_financial_metrics
+from src.tools.yahoo_finance import yf_get_prices, yf_get_financial_metrics, yf_get_insider_trades
 
 # Global cache instance
 _cache = get_cache()
@@ -25,6 +26,7 @@ _cache = get_cache()
 # Feature flag to enable/disable Yahoo Finance
 USE_YAHOO_FINANCE = os.environ.get("USE_YAHOO_FINANCE", "true").lower() == "true"
 
+logger = logging.getLogger(__name__)
 
 def get_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
     """Fetch price data from cache or API."""
@@ -47,9 +49,9 @@ def get_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
             _cache.set_prices(ticker, [p.model_dump() for p in prices])
             return prices
         except Exception as e:
-            print(f"Error fetching price data from Yahoo Finance: {str(e)}")
+            logger.warning(f"Error fetching price data from Yahoo Finance: {str(e)}")
             # Fall back to Financial Datasets API if Yahoo Finance fails
-            print("Falling back to Financial Datasets API...")
+            logger.info("Falling back to Financial Datasets API...")
             
     # If not using Yahoo Finance or it failed, use Financial Datasets API
     headers = {}
@@ -97,9 +99,9 @@ def get_financial_metrics(
                 _cache.set_financial_metrics(ticker, [m.model_dump() for m in metrics])
                 return metrics
         except Exception as e:
-            print(f"Error fetching financial metrics from Yahoo Finance: {str(e)}")
+            logger.warning(f"Error fetching financial metrics from Yahoo Finance: {str(e)}")
             # Fall back to Financial Datasets API if Yahoo Finance fails
-            print("Falling back to Financial Datasets API...")
+            logger.info("Falling back to Financial Datasets API...")
 
     # If not using Yahoo Finance or it failed, use Financial Datasets API
     headers = {}
@@ -167,17 +169,23 @@ def get_insider_trades(
     """Fetch insider trades from cache or API."""
     # Check cache first
     if cached_data := _cache.get_insider_trades(ticker):
-        # Filter cached data by date range
-        filtered_data = [InsiderTrade(**trade) for trade in cached_data 
-                        if (start_date is None or (trade.get("transaction_date") or trade["filing_date"]) >= start_date)
-                        and (trade.get("transaction_date") or trade["filing_date"]) <= end_date]
-        filtered_data.sort(key=lambda x: x.transaction_date or x.filing_date, reverse=True)
-        if filtered_data:
-            return filtered_data
-
-    # If not in cache or insufficient data, fetch from API
+        logger.info(f"Using cached insider trades for {ticker}")
+        return cached_data
+    
+    # If USE_YAHOO_FINANCE is enabled, use Yahoo Finance API
+    if USE_YAHOO_FINANCE:
+        try:
+            insider_trades = yf_get_insider_trades(ticker, end_date, start_date, limit)
+            return insider_trades
+        except Exception as e:
+            logger.warning(f"Error using Yahoo Finance for insider trades: {str(e)}. Falling back to Financial Datasets API.")
+    
+    # Fall back to Financial Datasets API
+    logger.info(f"Fetching insider trades from Financial Datasets API for {ticker}")
+    
     headers = {}
-    if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
+    api_key = os.environ.get("FINANCIAL_DATASETS_API_KEY")
+    if api_key:
         headers["X-API-KEY"] = api_key
 
     all_trades = []
