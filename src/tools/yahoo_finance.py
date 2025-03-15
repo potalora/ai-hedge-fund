@@ -75,6 +75,100 @@ def yf_get_prices(ticker: str, start_date: str, end_date: str) -> List[Price]:
         return []
 
 
+def yf_get_financial_metrics(
+    ticker: str,
+    end_date: Optional[str] = None,
+    period: str = "ttm",
+    limit: int = 10
+) -> List[FinancialMetrics]:
+    """
+    Get financial metrics for a company from Yahoo Finance.
+    
+    Args:
+        ticker: Stock ticker symbol
+        end_date: End date for financial metrics (ignored, Yahoo Finance provides latest data)
+        period: Reporting period (ttm, annual, quarterly)
+        limit: Maximum number of metrics to return (ignored, Yahoo Finance provides one set)
+        
+    Returns:
+        List of FinancialMetrics objects
+    """
+    cache_key = ticker
+    if cache_key in _cache["financial_metrics"]:
+        logger.info(f"Using cached financial metrics for {ticker}")
+        return _cache["financial_metrics"][cache_key]
+    
+    try:
+        logger.info(f"Fetching financial metrics for {ticker}")
+        ticker_data = yf.Ticker(ticker)
+        
+        # Get key statistics and financial data
+        info = ticker_data.info
+        
+        if not info:
+            logger.warning(f"No financial metrics found for {ticker}")
+            return []
+        
+        # Get the current date as report_period if end_date is not provided
+        report_period = end_date if end_date else datetime.now().strftime('%Y-%m-%d')
+        
+        # Create financial metrics object with data from Yahoo Finance
+        # Map Yahoo Finance fields to our FinancialMetrics model
+        financial_metrics = FinancialMetrics(
+            ticker=ticker,
+            report_period=report_period,
+            period=period,
+            currency=info.get('currency', 'USD'),
+            market_cap=info.get('marketCap'),
+            enterprise_value=info.get('enterpriseValue'),
+            price_to_earnings_ratio=info.get('trailingPE'),
+            price_to_book_ratio=info.get('priceToBook'),
+            price_to_sales_ratio=info.get('priceToSalesTrailing12Months'),
+            enterprise_value_to_ebitda_ratio=info.get('enterpriseToEbitda'),
+            enterprise_value_to_revenue_ratio=info.get('enterpriseToRevenue'),
+            free_cash_flow_yield=None,  # Not directly available from Yahoo Finance
+            peg_ratio=info.get('pegRatio'),
+            gross_margin=info.get('grossMargins', 0) * 100 if info.get('grossMargins') else None,
+            operating_margin=info.get('operatingMargins', 0) * 100 if info.get('operatingMargins') else None,
+            net_margin=info.get('profitMargins', 0) * 100 if info.get('profitMargins') else None,
+            return_on_equity=info.get('returnOnEquity', 0) * 100 if info.get('returnOnEquity') else None,
+            return_on_assets=info.get('returnOnAssets', 0) * 100 if info.get('returnOnAssets') else None,
+            return_on_invested_capital=None,  # Not directly available from Yahoo Finance
+            asset_turnover=None,  # Not directly available from Yahoo Finance
+            inventory_turnover=None,  # Not directly available from Yahoo Finance
+            receivables_turnover=None,  # Not directly available from Yahoo Finance
+            days_sales_outstanding=None,  # Not directly available from Yahoo Finance
+            operating_cycle=None,  # Not directly available from Yahoo Finance
+            working_capital_turnover=None,  # Not directly available from Yahoo Finance
+            current_ratio=info.get('currentRatio'),
+            quick_ratio=info.get('quickRatio'),
+            cash_ratio=None,  # Not directly available from Yahoo Finance
+            operating_cash_flow_ratio=None,  # Not directly available from Yahoo Finance
+            debt_to_equity=info.get('debtToEquity'),
+            debt_to_assets=None,  # Not directly available from Yahoo Finance
+            interest_coverage=None,  # Not directly available from Yahoo Finance
+            revenue_growth=info.get('revenueGrowth', 0) * 100 if info.get('revenueGrowth') else None,
+            earnings_growth=info.get('earningsGrowth', 0) * 100 if info.get('earningsGrowth') else None,
+            book_value_growth=None,  # Not directly available from Yahoo Finance
+            earnings_per_share_growth=info.get('earningsQuarterlyGrowth', 0) * 100 if info.get('earningsQuarterlyGrowth') else None,
+            free_cash_flow_growth=None,  # Not directly available from Yahoo Finance
+            operating_income_growth=None,  # Not directly available from Yahoo Finance
+            ebitda_growth=None,  # Not directly available from Yahoo Finance
+            payout_ratio=info.get('payoutRatio', 0) * 100 if info.get('payoutRatio') else None,
+            earnings_per_share=info.get('trailingEps'),
+            book_value_per_share=info.get('bookValue'),
+            free_cash_flow_per_share=None,  # Not directly available from Yahoo Finance
+        )
+        
+        # Cache the results as a list for consistency with the API
+        _cache["financial_metrics"][cache_key] = [financial_metrics]
+        return [financial_metrics]
+        
+    except Exception as e:
+        logger.error(f"Error fetching financial metrics for {ticker}: {str(e)}")
+        return []
+
+
 def clear_cache():
     """Clear all cached data."""
     _cache["prices"].clear()

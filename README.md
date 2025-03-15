@@ -82,13 +82,17 @@ GROQ_API_KEY=your-groq-api-key
 # For getting financial data to power the hedge fund
 # Get your Financial Datasets API key from https://financialdatasets.ai/
 FINANCIAL_DATASETS_API_KEY=your-financial-datasets-api-key
+
+# Optional: Set to "true" to use Yahoo Finance for financial data
+# This is useful if you don't have a Financial Datasets API key
+USE_YAHOO_FINANCE=true
 ```
 
 **Important**: You must set `OPENAI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`, or `DEEPSEEK_API_KEY` for the hedge fund to work.  If you want to use LLMs from all providers, you will need to set all API keys.
 
 Financial data for AAPL, GOOGL, MSFT, NVDA, and TSLA is free and does not require an API key.
 
-For any other ticker, you will need to set the `FINANCIAL_DATASETS_API_KEY` in the .env file.
+For any other ticker, you will need to set the `FINANCIAL_DATASETS_API_KEY` in the .env file, or set `USE_YAHOO_FINANCE=true` to use Yahoo Finance as the data source.
 
 ## Usage
 

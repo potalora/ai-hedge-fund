@@ -17,7 +17,7 @@ from src.data.models import (
 )
 
 # Import Yahoo Finance adapter
-from src.tools.yahoo_finance import yf_get_prices
+from src.tools.yahoo_finance import yf_get_prices, yf_get_financial_metrics
 
 # Global cache instance
 _cache = get_cache()
@@ -88,7 +88,20 @@ def get_financial_metrics(
         if filtered_data:
             return filtered_data[:limit]
 
-    # If not in cache or insufficient data, fetch from API
+    # If USE_YAHOO_FINANCE is enabled, use Yahoo Finance API
+    if USE_YAHOO_FINANCE:
+        try:
+            metrics = yf_get_financial_metrics(ticker, end_date, period, limit)
+            if metrics:
+                # Cache the results as dicts
+                _cache.set_financial_metrics(ticker, [m.model_dump() for m in metrics])
+                return metrics
+        except Exception as e:
+            print(f"Error fetching financial metrics from Yahoo Finance: {str(e)}")
+            # Fall back to Financial Datasets API if Yahoo Finance fails
+            print("Falling back to Financial Datasets API...")
+
+    # If not using Yahoo Finance or it failed, use Financial Datasets API
     headers = {}
     if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
         headers["X-API-KEY"] = api_key
@@ -100,7 +113,6 @@ def get_financial_metrics(
 
     # Parse response with Pydantic model
     metrics_response = FinancialMetricsResponse(**response.json())
-    # Return the FinancialMetrics objects directly instead of converting to dict
     financial_metrics = metrics_response.financial_metrics
 
     if not financial_metrics:
