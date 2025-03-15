@@ -2,8 +2,8 @@ import os
 import pandas as pd
 import requests
 
-from data.cache import get_cache
-from data.models import (
+from src.data.cache import get_cache
+from src.data.models import (
     CompanyNews,
     CompanyNewsResponse,
     FinancialMetrics,
@@ -16,8 +16,14 @@ from data.models import (
     InsiderTradeResponse,
 )
 
+# Import Yahoo Finance adapter
+from src.tools.yahoo_finance import yf_get_prices
+
 # Global cache instance
 _cache = get_cache()
+
+# Feature flag to enable/disable Yahoo Finance
+USE_YAHOO_FINANCE = os.environ.get("USE_YAHOO_FINANCE", "true").lower() == "true"
 
 
 def get_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
@@ -29,7 +35,23 @@ def get_prices(ticker: str, start_date: str, end_date: str) -> list[Price]:
         if filtered_data:
             return filtered_data
 
-    # If not in cache or no data in range, fetch from API
+    # If USE_YAHOO_FINANCE is enabled, use Yahoo Finance API
+    if USE_YAHOO_FINANCE:
+        try:
+            prices = yf_get_prices(ticker, start_date, end_date)
+            
+            if not prices:
+                return []
+                
+            # Cache the results as dicts
+            _cache.set_prices(ticker, [p.model_dump() for p in prices])
+            return prices
+        except Exception as e:
+            print(f"Error fetching price data from Yahoo Finance: {str(e)}")
+            # Fall back to Financial Datasets API if Yahoo Finance fails
+            print("Falling back to Financial Datasets API...")
+            
+    # If not using Yahoo Finance or it failed, use Financial Datasets API
     headers = {}
     if api_key := os.environ.get("FINANCIAL_DATASETS_API_KEY"):
         headers["X-API-KEY"] = api_key
